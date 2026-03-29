@@ -26,10 +26,12 @@
             <h2 class="text-2xl font-bold mt-4 text-gray-800">时间维度</h2>
         </div>
         <nav>
-            <div class="nav-item active" data-type="weekly">一周犯罪分布</div>
-            <div class="nav-item" data-type="hourly">24小时犯罪分布</div>
+            <div class="nav-item active" data-type="yearly">年度案件趋势</div>
+            <div class="nav-item" data-type="arrest">逮捕率变迁</div>
             <div class="nav-item" data-type="monthly">月度季节性规律</div>
             <div class="nav-item" data-type="crosstab">犯罪类型月度热图</div>
+            <div class="nav-item" data-type="weekly">一周犯罪分布</div>
+            <div class="nav-item" data-type="hourly">24小时犯罪分布</div>
         </nav>
     </div>
 
@@ -166,6 +168,61 @@
                     const insightsEl = document.getElementById('crosstab-insights');
                     insightsEl.innerHTML = insights.map((item, i) => `<div class="p-4 rounded-2xl bg-slate-50 border border-slate-100"><div class="text-xs font-bold text-indigo-500 mb-2">${item.type}</div><div class="flex items-center gap-2 text-xs text-slate-600"><span class="text-rose-500">●</span> 高峰: ${item.peakMonth} (${item.peakCnt.toLocaleString()}件)</div><div class="flex items-center gap-2 text-xs text-slate-600 mt-1"><span class="text-emerald-500">●</span> 低谷: ${item.lowMonth} (${item.lowCnt.toLocaleString()}件)</div></div>`).join('');
                 }
+            },
+            arrest: {
+                html: `<div class="glass-card p-8 xl:col-span-2"><h3 class="text-lg font-bold text-slate-800 mb-6">历年逮捕率变化趋势</h3><div id="detail-chart-1" class="h-[400px] w-full"></div></div><div class="glass-card p-8"><h3 class="text-lg font-bold text-slate-800 mb-6">逮捕率统计</h3><div id="arrest-stats" class="space-y-4"></div></div><div class="glass-card p-8 xl:col-span-3"><h3 class="text-lg font-bold text-slate-800 mb-6">年度逮捕率详情</h3><div class="overflow-hidden rounded-2xl"><table class="w-full text-left"><thead class="bg-slate-50/50"><tr><th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase">年份</th><th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase">逮捕率</th><th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase">同比变化</th><th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase">趋势</th></tr></thead><tbody id="arrest-table-body" class="divide-y divide-slate-100"></tbody></table></div></div>`,
+                action: async () => {
+                    const res = await api.fetchArrestRate();
+                    const data = res.sort((a, b) => parseInt(a.year) - parseInt(b.year));
+                    const draw = () => charts.drawLineChart("detail-chart-1", data, d => parseInt(d.year), d => parseFloat(d.arrest_rate), charts.colors.rose, '%');
+                    draw();
+                    charts.registerChart("detail-chart-1", draw);
+                    const rates = data.map(d => parseFloat(d.arrest_rate));
+                    const avgRate = rates.reduce((a, b) => a + b, 0) / rates.length;
+                    const maxRate = Math.max(...rates);
+                    const minRate = Math.min(...rates);
+                    const statsEl = document.getElementById('arrest-stats');
+                    statsEl.innerHTML = `
+                        <div class="p-4 rounded-2xl bg-indigo-50 border border-indigo-100"><div class="text-xs text-indigo-400 mb-1">平均逮捕率</div><div class="text-2xl font-extrabold text-indigo-600">${avgRate.toFixed(2)}%</div></div>
+                        <div class="p-4 rounded-2xl bg-emerald-50 border border-emerald-100"><div class="text-xs text-emerald-400 mb-1">最高逮捕率</div><div class="text-2xl font-extrabold text-emerald-600">${maxRate.toFixed(2)}%</div></div>
+                        <div class="p-4 rounded-2xl bg-rose-50 border border-rose-100"><div class="text-xs text-rose-400 mb-1">最低逮捕率</div><div class="text-2xl font-extrabold text-rose-600">${minRate.toFixed(2)}%</div></div>
+                    `;
+                    const tbody = document.getElementById('arrest-table-body');
+                    tbody.innerHTML = data.map((d, i) => {
+                        const rate = parseFloat(d.arrest_rate);
+                        const yoy = i > 0 ? rate - parseFloat(data[i - 1].arrest_rate) : 0;
+                        const yoyText = i > 0 ? (yoy > 0 ? `+${yoy.toFixed(2)}%` : `${yoy.toFixed(2)}%`) : '--';
+                        const yoyClass = yoy > 0 ? 'text-emerald-500' : yoy < 0 ? 'text-rose-500' : 'text-slate-400';
+                        const trend = rate > avgRate ? '高于平均' : '低于平均';
+                        const trendClass = rate > avgRate ? 'bg-emerald-50 text-emerald-500' : 'bg-slate-50 text-slate-500';
+                        return `<tr class="hover:bg-slate-50/50 transition-colors"><td class="px-6 py-4 font-bold text-slate-700">${d.year}</td><td class="px-6 py-4 text-slate-600">${rate.toFixed(2)}%</td><td class="px-6 py-4 ${yoyClass} font-semibold">${yoyText}</td><td class="px-6 py-4"><span class="px-2 py-1 rounded-full text-[10px] font-bold ${trendClass}">${trend}</span></td></tr>`;
+                    }).join('');
+                }
+            },
+            yearly: {
+                html: `<div class="glass-card p-8 pb-4 xl:col-span-2 flex flex-col"><div class="flex justify-between items-center mb-6"><h3 class="text-lg font-bold text-slate-800">年度案件数量变化趋势</h3><span class="text-xs text-slate-400 font-medium">单位：件</span></div><div id="detail-chart-yearly-1" class="h-[380px] w-full mb-6"></div><div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-auto mb-4"><div class="p-4 rounded-2xl bg-red-50/50 border border-red-100 flex flex-col items-center justify-center text-center"><div class="text-xs text-red-400 mb-1">案件最多年份</div><div id="yearly-peak" class="text-lg font-bold text-red-600 leading-snug tabular-nums">--</div></div><div class="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-100 flex flex-col items-center justify-center text-center"><div class="text-xs text-emerald-400 mb-1">案件最少年份</div><div id="yearly-lowest" class="text-lg font-bold text-emerald-600 leading-snug tabular-nums">--</div></div></div></div><div class="glass-card p-8 flex flex-col gap-6"><h3 class="text-lg font-bold text-slate-800">趋势说明</h3><div class="p-4 rounded-2xl bg-slate-50 border border-slate-100"><div class="text-xs text-slate-400 mb-2">数据概览</div><p class="text-xs text-slate-600 leading-relaxed">年度案件数量反映了城市治安的长期变化趋势。通过分析历年数据，可以识别出案件高峰期和低谷期，为政策制定提供参考。</p></div></div><div class="glass-card p-8 xl:col-span-3"><h3 class="text-lg font-bold text-slate-800 mb-6">年度案件数据清单</h3><div class="overflow-hidden rounded-2xl"><table class="w-full text-left"><thead class="bg-slate-50/50"><tr><th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase">年份</th><th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase">案件总量</th><th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase">同比增长</th><th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase">趋势</th></tr></thead><tbody id="yearly-table-body" class="divide-y divide-slate-100"></tbody></table></div></div>`,
+                action: async () => {
+                    const res = await api.fetchYearlyTrend();
+                    const data = res.sort((a, b) => parseInt(a.year) - parseInt(b.year));
+                    const draw = () => {
+                        charts.drawLineChart("detail-chart-yearly-1", data, d => d.year, d => d.cnt, charts.colors.indigo);
+                        const peak = data.reduce((a, b) => a.cnt > b.cnt ? a : b);
+                        const lowest = data.reduce((a, b) => a.cnt < b.cnt ? a : b);
+                        document.getElementById('yearly-peak').textContent = `${peak.year} (${peak.cnt.toLocaleString()}件)`;
+                        document.getElementById('yearly-lowest').textContent = `${lowest.year} (${lowest.cnt.toLocaleString()}件)`;
+                        const tbody = document.getElementById('yearly-table-body');
+                        const avgCnt = data.reduce((a, b) => a + b.cnt, 0) / data.length;
+                        tbody.innerHTML = data.map(d => {
+                            const yoyText = d.yoy !== 0 ? (d.yoy > 0 ? `+${d.yoy}%` : `${d.yoy}%`) : '--';
+                            const yoyClass = d.yoy > 0 ? 'text-rose-500' : d.yoy < 0 ? 'text-emerald-500' : 'text-slate-400';
+                            const trend = d.cnt > avgCnt ? '高于平均' : '低于平均';
+                            const trendClass = d.cnt > avgCnt ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500';
+                            return `<tr class="hover:bg-slate-50/50 transition-colors"><td class="px-6 py-4 font-bold text-slate-700">${d.year}</td><td class="px-6 py-4 text-slate-600">${d.cnt.toLocaleString()}</td><td class="px-6 py-4 ${yoyClass} font-semibold">${yoyText}</td><td class="px-6 py-4"><span class="px-2 py-1 rounded-full text-[10px] font-bold ${trendClass}">${trend}</span></td></tr>`;
+                        }).join('');
+                    };
+                    draw();
+                    charts.registerChart("detail-chart-yearly-1", draw);
+                }
             }
         };
 
@@ -184,7 +241,7 @@
             });
         });
 
-        loadAnalysis('weekly');
+        loadAnalysis('yearly');
     </script>
 </body>
 </html>

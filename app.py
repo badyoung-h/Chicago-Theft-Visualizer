@@ -144,6 +144,27 @@ def hourly_distribution():
         if cur: cur.close()
         release_db_conn(conn)
 
+@app.route('/api/arrest_rate')
+@cache.cached()
+def arrest_rate():
+    conn = get_db_conn()
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT EXTRACT(YEAR FROM date) AS year,
+                   COUNT(*) FILTER (WHERE arrest = TRUE) AS arrests,
+                   COUNT(*) AS total,
+                   ROUND(COUNT(*) FILTER (WHERE arrest = TRUE) * 100.0 / COUNT(*), 2) AS arrest_rate
+            FROM crimes
+            GROUP BY EXTRACT(YEAR FROM date)
+            ORDER BY year
+        """)
+        rows = cur.fetchall()
+        return jsonify(rows)
+    finally:
+        if cur: cur.close()
+        release_db_conn(conn)
+
 @app.route('/api/top_crime_types')
 @cache.cached()
 def top_crime_types():
@@ -187,27 +208,6 @@ def district_crimes():
             cur.execute("SELECT district, COUNT(*) AS cnt FROM crimes WHERE district IS NOT NULL GROUP BY district ORDER BY cnt DESC")
         rows = cur.fetchall()
         cache.set(cache_key, rows)
-        return jsonify(rows)
-    finally:
-        if cur: cur.close()
-        release_db_conn(conn)
-
-@app.route('/api/arrest_rate')
-@cache.cached()
-def arrest_rate():
-    conn = get_db_conn()
-    try:
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("""
-            SELECT EXTRACT(YEAR FROM date) AS year,
-                   COUNT(*) FILTER (WHERE arrest = TRUE) AS arrests,
-                   COUNT(*) AS total,
-                   ROUND(COUNT(*) FILTER (WHERE arrest = TRUE) * 100.0 / COUNT(*), 2) AS arrest_rate
-            FROM crimes
-            GROUP BY EXTRACT(YEAR FROM date)
-            ORDER BY year
-        """)
-        rows = cur.fetchall()
         return jsonify(rows)
     finally:
         if cur: cur.close()
