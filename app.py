@@ -1,6 +1,7 @@
 import os
 import time
 import logging
+import json
 from flask import Flask, jsonify, render_template, current_app
 import psycopg2
 from psycopg2 import pool
@@ -17,6 +18,16 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# 加载地点分类映射
+with open('location_categories.json', 'r', encoding='utf-8') as f:
+    LOCATION_CATEGORIES = json.load(f)
+
+# 构建反向映射：原始地点 -> 分类名
+LOCATION_TO_CATEGORY = {}
+for category, locations in LOCATION_CATEGORIES.items():
+    for loc in locations:
+        LOCATION_TO_CATEGORY[loc] = category
 
 app = Flask(__name__)
 
@@ -238,21 +249,48 @@ def domestic_trend():
         release_db_conn(conn)
 
 @app.route('/api/top_locations')
-@cache.cached()
 def top_locations():
+    from flask import request
+    crime_type = request.args.get('type')
+    cache_key = f'top_locations_{crime_type or "all"}'
+    result = cache.get(cache_key)
+    if result:
+        return jsonify(result)
     conn = get_db_conn()
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("""
-            SELECT location_description, COUNT(*) AS cnt
-            FROM crimes
-            WHERE location_description IS NOT NULL
-            GROUP BY location_description
-            ORDER BY cnt DESC
-            LIMIT 10
-        """)
+        if crime_type:
+            cur.execute("""
+                SELECT location_description, COUNT(*) AS cnt
+                FROM crimes
+                WHERE location_description IS NOT NULL AND primary_type = %s
+                GROUP BY location_description
+            """, (crime_type,))
+        else:
+            cur.execute("""
+                SELECT location_description, COUNT(*) AS cnt
+                FROM crimes
+                WHERE location_description IS NOT NULL
+                GROUP BY location_description
+            """)
         rows = cur.fetchall()
-        return jsonify(rows)
+
+        # 按分类聚合
+        category_counts = {}
+        for row in rows:
+            loc = row['location_description']
+            cnt = row['cnt']
+            category = LOCATION_TO_CATEGORY.get(loc, 'Other')
+            category_counts[category] = category_counts.get(category, 0) + cnt
+
+        # 转换为列表并排序，过滤掉 Other
+        result = [{'location_description': cat, 'cnt': cnt}
+                  for cat, cnt in category_counts.items() if cat != 'Other']
+        result.sort(key=lambda x: x['cnt'], reverse=True)
+
+        result = result[:10]
+        cache.set(cache_key, result)
+        return jsonify(result)
     finally:
         if cur: cur.close()
         release_db_conn(conn)

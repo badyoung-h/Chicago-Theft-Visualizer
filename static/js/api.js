@@ -36,8 +36,9 @@ export async function fetchDomesticTrend() {
     return fetch('/api/domestic_trend').then(r => r.json());
 }
 
-export async function fetchTopLocations() {
-    return fetch('/api/top_locations').then(r => r.json());
+export async function fetchTopLocations(crimeType = null) {
+    const url = crimeType ? `/api/top_locations?type=${encodeURIComponent(crimeType)}` : '/api/top_locations';
+    return fetch(url).then(r => r.json());
 }
 
 export async function fetchMonthlyTrend() {
