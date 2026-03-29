@@ -61,3 +61,7 @@ export async function fetchBlockConcentration(crimeType = null) {
     const url = crimeType ? `/api/block_concentration?type=${encodeURIComponent(crimeType)}` : '/api/block_concentration';
     return fetch(url).then(r => r.json());
 }
+
+export async function fetchCrimeTypeStructureChange() {
+    return fetch('/api/crime_type_structure_change').then(r => r.json());
+}

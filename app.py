@@ -233,7 +233,7 @@ def domestic_trend():
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute("""
-            SELECT 
+            SELECT
                 EXTRACT(YEAR FROM date) AS year,
                 COUNT(*) FILTER (WHERE domestic = TRUE) AS domestic_cnt,
                 COUNT(*) FILTER (WHERE domestic = FALSE) AS non_domestic_cnt,
@@ -241,6 +241,33 @@ def domestic_trend():
             FROM crimes
             GROUP BY EXTRACT(YEAR FROM date)
             ORDER BY year
+        """)
+        rows = cur.fetchall()
+        return jsonify(rows)
+    finally:
+        if cur: cur.close()
+        release_db_conn(conn)
+
+@app.route('/api/crime_type_structure_change')
+@cache.cached()
+def crime_type_structure_change():
+    conn = get_db_conn()
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT
+                primary_type,
+                COUNT(*) FILTER (WHERE EXTRACT(YEAR FROM date) BETWEEN 2001 AND 2005) AS period1_cnt,
+                COUNT(*) FILTER (WHERE EXTRACT(YEAR FROM date) BETWEEN 2019 AND 2023) AS period2_cnt
+            FROM crimes
+            WHERE EXTRACT(YEAR FROM date) BETWEEN 2001 AND 2005
+               OR EXTRACT(YEAR FROM date) BETWEEN 2019 AND 2023
+            GROUP BY primary_type
+            HAVING COUNT(*) FILTER (WHERE EXTRACT(YEAR FROM date) BETWEEN 2001 AND 2005) > 0
+               AND COUNT(*) FILTER (WHERE EXTRACT(YEAR FROM date) BETWEEN 2019 AND 2023) > 0
+            ORDER BY (COUNT(*) FILTER (WHERE EXTRACT(YEAR FROM date) BETWEEN 2001 AND 2005) +
+                      COUNT(*) FILTER (WHERE EXTRACT(YEAR FROM date) BETWEEN 2019 AND 2023)) DESC
+            LIMIT 15
         """)
         rows = cur.fetchall()
         return jsonify(rows)

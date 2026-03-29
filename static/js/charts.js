@@ -160,12 +160,12 @@ export function drawYoYChart(containerId, data, xAccessor, yAccessor) {
     const yMin = d3.min(data, yAccessor);
     const yMax = d3.max(data, yAccessor);
     const yLimit = Math.max(Math.abs(yMin), Math.abs(yMax)) * 1.2;
-    
+
     const x = d3.scaleBand().domain(data.map(xAccessor)).range([0, IW]).padding(0.4);
     const y = d3.scaleLinear().domain([-yLimit, yLimit]).range([IH, 0]);
 
     svg.append("g").attr("class", "grid-lines").call(d3.axisLeft(y).ticks(5).tickSize(-IW).tickFormat("")).selectAll(".tick line").attr("stroke", "#f1f5f9").attr("stroke-dasharray", "4,4");
-    
+
     // 零线
     svg.append("line").attr("x1", 0).attr("x2", IW).attr("y1", y(0)).attr("y2", y(0)).attr("stroke", "#cbd5e1").attr("stroke-width", 1);
 
@@ -182,6 +182,52 @@ export function drawYoYChart(containerId, data, xAccessor, yAccessor) {
     svg.append("g").attr("transform", `translate(0,${IH})`).call(d3.axisBottom(x).tickSize(0).tickPadding(10)).style("color", "#64748b")
         .selectAll("text").attr("transform", "rotate(-45)").style("text-anchor", "end");
     svg.append("g").call(d3.axisLeft(y).ticks(5).tickFormat(d => (d > 0 ? "+" : "") + d).tickSize(0).tickPadding(15)).style("color", "#64748b");
+    svg.selectAll(".domain").remove();
+}
+
+export function drawRatioChart(containerId, data, xAccessor, yAccessor) {
+    const container = d3.select(`#${containerId}`);
+    container.selectAll("*").remove();
+    const width = container.node().clientWidth;
+    const height = container.node().clientHeight;
+    const margin = {top: 40, right: 50, bottom: 35, left: 70};
+    const IW = width - margin.left - margin.right;
+    const IH = height - margin.top - margin.bottom;
+
+    const svg = container.append("svg")
+        .attr("viewBox", `0 0 ${width} ${height}`)
+        .attr("preserveAspectRatio", "xMidYMid meet")
+        .append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const x = d3.scalePoint().domain(data.map(xAccessor)).range([0, IW]);
+    const y = d3.scaleLinear().domain([0, d3.max(data, yAccessor) * 1.15]).range([IH, 0]);
+
+    const line = d3.line().x(d => x(xAccessor(d))).y(d => y(yAccessor(d))).curve(d3.curveMonotoneX);
+    const area = d3.area().x(d => x(xAccessor(d))).y0(IH).y1(d => y(yAccessor(d))).curve(d3.curveMonotoneX);
+
+    const gradId = `grad-ratio-${containerId}`;
+    const defs = svg.append("defs");
+    const grad = defs.append("linearGradient").attr("id", gradId).attr("x1", "0%").attr("y1", "0%").attr("x2", "0%").attr("y2", "100%");
+    grad.append("stop").attr("offset", "0%").attr("stop-color", colors.purple).attr("stop-opacity", 0.4);
+    grad.append("stop").attr("offset", "100%").attr("stop-color", colors.purple).attr("stop-opacity", 0);
+
+    svg.append("g").attr("class", "grid-lines").call(d3.axisLeft(y).ticks(5).tickSize(-IW).tickFormat("")).selectAll(".tick line").attr("stroke", colors.grid).attr("stroke-dasharray", "4,4");
+
+    svg.append("path").datum(data).attr("fill", `url(#${gradId})`).attr("d", area);
+    const path = svg.append("path").datum(data).attr("fill", "none").attr("stroke", colors.purple).attr("stroke-width", 3.5).attr("d", line);
+    const length = path.node().getTotalLength();
+    path.attr("stroke-dasharray", length).attr("stroke-dashoffset", length).transition().duration(1500).attr("stroke-dashoffset", 0);
+
+    svg.selectAll(".dot").data(data).enter().append("circle").attr("class", "dot")
+        .attr("cx", d => x(xAccessor(d))).attr("cy", d => y(yAccessor(d))).attr("r", 5).attr("fill", colors.purple).attr("stroke", "white").attr("stroke-width", 2)
+        .style("opacity", 0).transition().delay(1500).duration(300).style("opacity", 1);
+
+    svg.selectAll(".dot").on("mouseover", (e, d) => showTooltip(`<b>${xAccessor(d)}</b><br/>比值: ${yAccessor(d).toFixed(3)}`, e.pageX, e.pageY))
+        .on("mouseout", hideTooltip);
+
+    svg.append("g").attr("transform", `translate(0,${IH})`).call(d3.axisBottom(x).tickSize(0).tickPadding(15)).style("color", colors.slate);
+    svg.append("g").call(d3.axisLeft(y).ticks(5).tickSize(0).tickPadding(15).tickFormat(d => d.toFixed(2))).style("color", colors.slate);
     svg.selectAll(".domain").remove();
 }
 
@@ -682,4 +728,110 @@ export function drawHeatmap(containerId, data, xKey, yKey, valueKey) {
     legend.append("rect").attr("width", 20).attr("height", IH).attr("rx", 10).attr("fill", `url(#heatmap-legend-gradient-${containerId})`);
     legend.append("text").attr("x", 30).attr("y", 10).style("font-size", "12px").style("fill", "#475569").text("高");
     legend.append("text").attr("x", 30).attr("y", IH).style("font-size", "12px").style("fill", "#475569").text("低");
+}
+
+export function drawButterflyChart(containerId, data, categoryAccessor, value1Accessor, value2Accessor) {
+    const container = d3.select(`#${containerId}`);
+    container.selectAll("*").remove();
+    const width = container.node().clientWidth;
+    const height = container.node().clientHeight;
+    const margin = {top: 60, right: 120, bottom: 50, left: 120};
+    const IW = width - margin.left - margin.right;
+    const IH = height - margin.top - margin.bottom;
+
+    const svg = container.append("svg")
+        .attr("viewBox", `0 0 ${width} ${height}`)
+        .attr("preserveAspectRatio", "xMidYMid meet")
+        .append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const maxVal = Math.max(d3.max(data, value1Accessor), d3.max(data, value2Accessor));
+    const y = d3.scaleBand().domain(data.map(categoryAccessor)).range([0, IH]).padding(0.4);
+    const x = d3.scaleLinear().domain([0, maxVal * 1.2]).range([0, IW / 2 - 180]);
+
+    const defs = svg.append("defs");
+    const grad1 = defs.append("linearGradient").attr("id", `bf-g1-${containerId}`).attr("x1", "0%").attr("x2", "100%");
+    grad1.append("stop").attr("offset", "0%").attr("stop-color", "#4f46e5");
+    grad1.append("stop").attr("offset", "100%").attr("stop-color", "#7c3aed");
+
+    const grad2 = defs.append("linearGradient").attr("id", `bf-g2-${containerId}`).attr("x1", "100%").attr("x2", "0%");
+    grad2.append("stop").attr("offset", "0%").attr("stop-color", "#dc2626");
+    grad2.append("stop").attr("offset", "100%").attr("stop-color", "#e11d48");
+
+    const shadow = defs.append("filter").attr("id", `bf-shadow-${containerId}`).attr("height", "130%");
+    shadow.append("feGaussianBlur").attr("in", "SourceAlpha").attr("stdDeviation", 3);
+    shadow.append("feOffset").attr("dx", 0).attr("dy", 2).attr("result", "offsetblur");
+    shadow.append("feComponentTransfer").append("feFuncA").attr("type", "linear").attr("slope", 0.2);
+    const feMerge = shadow.append("feMerge");
+    feMerge.append("feMergeNode");
+    feMerge.append("feMergeNode").attr("in", "SourceGraphic");
+
+    svg.append("line").attr("x1", IW/2).attr("x2", IW/2).attr("y1", -35).attr("y2", IH + 15)
+        .attr("stroke", "#cbd5e1").attr("stroke-width", 2.5).attr("stroke-dasharray", "8,6");
+
+    svg.selectAll(".bar-left").data(data).enter().append("rect")
+        .attr("x", d => IW/2 - x(value1Accessor(d)) - 140)
+        .attr("y", d => y(categoryAccessor(d)))
+        .attr("width", 0).attr("height", y.bandwidth()).attr("rx", 8)
+        .attr("fill", `url(#bf-g1-${containerId})`)
+        .attr("filter", `url(#bf-shadow-${containerId})`)
+        .on("mouseover", function(e, d) {
+            d3.select(this).transition().duration(200).attr("opacity", 0.8);
+            showTooltip(`<b>${categoryAccessor(d)}</b><br/>2001-2005: <b>${value1Accessor(d).toLocaleString()}</b> 件`, e.pageX, e.pageY);
+        })
+        .on("mouseout", function() {
+            d3.select(this).transition().duration(200).attr("opacity", 1);
+            hideTooltip();
+        })
+        .transition().duration(1200).ease(d3.easeCubicOut).delay((d, i) => i * 60)
+        .attr("width", d => x(value1Accessor(d)));
+
+    svg.selectAll(".bar-right").data(data).enter().append("rect")
+        .attr("x", IW/2 + 140)
+        .attr("y", d => y(categoryAccessor(d)))
+        .attr("width", 0).attr("height", y.bandwidth()).attr("rx", 8)
+        .attr("fill", `url(#bf-g2-${containerId})`)
+        .attr("filter", `url(#bf-shadow-${containerId})`)
+        .on("mouseover", function(e, d) {
+            d3.select(this).transition().duration(200).attr("opacity", 0.8);
+            showTooltip(`<b>${categoryAccessor(d)}</b><br/>2019-2023: <b>${value2Accessor(d).toLocaleString()}</b> 件`, e.pageX, e.pageY);
+        })
+        .on("mouseout", function() {
+            d3.select(this).transition().duration(200).attr("opacity", 1);
+            hideTooltip();
+        })
+        .transition().duration(1200).ease(d3.easeCubicOut).delay((d, i) => i * 60)
+        .attr("width", d => x(value2Accessor(d)));
+
+    svg.selectAll(".val-left").data(data).enter().append("text")
+        .attr("x", d => IW/2 - x(value1Accessor(d)) - 150)
+        .attr("y", d => y(categoryAccessor(d)) + y.bandwidth() / 2)
+        .attr("text-anchor", "end").attr("dominant-baseline", "middle")
+        .style("font-size", "12px").style("fill", "#4f46e5").style("font-weight", "700").style("opacity", 0)
+        .text(d => (value1Accessor(d) / 1000).toFixed(1) + "k")
+        .transition().duration(800).delay((d, i) => i * 60 + 600).style("opacity", 1);
+
+    svg.selectAll(".val-right").data(data).enter().append("text")
+        .attr("x", d => IW/2 + x(value2Accessor(d)) + 150)
+        .attr("y", d => y(categoryAccessor(d)) + y.bandwidth() / 2)
+        .attr("text-anchor", "start").attr("dominant-baseline", "middle")
+        .style("font-size", "12px").style("fill", "#dc2626").style("font-weight", "700").style("opacity", 0)
+        .text(d => (value2Accessor(d) / 1000).toFixed(1) + "k")
+        .transition().duration(800).delay((d, i) => i * 60 + 600).style("opacity", 1);
+
+    svg.selectAll(".cat-label").data(data).enter().append("text")
+        .attr("x", IW/2).attr("y", d => y(categoryAccessor(d)) + y.bandwidth() / 2)
+        .attr("text-anchor", "middle").attr("dominant-baseline", "middle")
+        .style("font-size", "14px").style("fill", "#0f172a").style("font-weight", "700")
+        .style("paint-order", "stroke").style("stroke", "white").style("stroke-width", "4px")
+        .style("stroke-linejoin", "round").style("opacity", 0)
+        .text(categoryAccessor)
+        .transition().duration(800).delay((d, i) => i * 60 + 400).style("opacity", 1);
+
+    svg.append("text").attr("x", IW/4 - 40).attr("y", -30).attr("text-anchor", "middle")
+        .style("font-size", "16px").style("fill", "#4f46e5").style("font-weight", "800")
+        .style("letter-spacing", "0.5px").text("2001-2005");
+    svg.append("text").attr("x", IW*3/4 + 40).attr("y", -30).attr("text-anchor", "middle")
+        .style("font-size", "16px").style("fill", "#dc2626").style("font-weight", "800")
+        .style("letter-spacing", "0.5px").text("2019-2023");
 }

@@ -27,6 +27,7 @@
         </div>
         <nav>
             <div class="nav-item active" data-type="domestic">家暴与非家暴</div>
+            <div class="nav-item" data-type="structure">犯罪类型结构变化</div>
         </nav>
     </div>
 
@@ -45,23 +46,33 @@
 
         const configs = {
             domestic: {
-                html: `<div class="glass-card p-8 xl:col-span-2"><h3 class="text-lg font-bold text-slate-800 mb-6">家暴案件趋势</h3><div id="detail-chart-1" class="h-[400px] w-full"></div></div><div class="glass-card p-8"><h3 class="text-lg font-bold text-slate-800 mb-6">同比增减</h3><div id="detail-chart-2" class="h-[350px] w-full"></div></div>`,
+                html: `<div class="glass-card p-8 xl:col-span-3"><h3 class="text-lg font-bold text-slate-800 mb-6">家暴案件趋势</h3><div id="detail-chart-1" class="h-[400px] w-full"></div></div><div class="glass-card p-8 xl:col-span-3"><h3 class="text-lg font-bold text-slate-800 mb-6">家暴/非家暴比值趋势</h3><div id="detail-chart-2" class="h-[400px] w-full"></div></div>`,
                 action: async () => {
                     const trendData = await api.fetchDomesticTrend();
                     if (!trendData || trendData.length === 0) return;
-                    const yoyData = trendData.map((d, i) => {
-                        if (i === 0) return { ...d, diff: 0, diff_percent: 0 };
-                        const diff = d.domestic_cnt - trendData[i-1].domestic_cnt;
-                        const diff_percent = ((diff / trendData[i-1].domestic_cnt) * 100).toFixed(1);
-                        return { ...d, diff, diff_percent: parseFloat(diff_percent) };
-                    }).slice(1);
+                    const ratioData = trendData.map(d => ({
+                        year: d.year,
+                        ratio: d.non_domestic_cnt > 0 ? (d.domestic_cnt / d.non_domestic_cnt) : 0
+                    }));
                     const draw = () => {
                         charts.drawLineChart("detail-chart-1", trendData, d => d.year, d => d.domestic_cnt, charts.colors.rose, " 宗");
-                        charts.drawYoYChart("detail-chart-2", yoyData, d => d.year, d => d.diff);
+                        charts.drawRatioChart("detail-chart-2", ratioData, d => d.year, d => d.ratio);
                     };
                     draw();
                     charts.registerChart("detail-chart-1", draw);
                     charts.registerChart("detail-chart-2", draw);
+                }
+            },
+            structure: {
+                html: `<div class="glass-card p-8 xl:col-span-3"><h3 class="text-lg font-bold text-slate-800 mb-6">犯罪类型结构性变化 <span class="text-sm font-normal text-slate-500">（2001-2005 vs 2019-2023）</span></h3><div id="detail-chart-3" class="h-[600px] w-full"></div></div>`,
+                action: async () => {
+                    const structureData = await api.fetchCrimeTypeStructureChange();
+                    if (!structureData || structureData.length === 0) return;
+                    const draw = () => {
+                        charts.drawButterflyChart("detail-chart-3", structureData, d => d.primary_type, d => d.period1_cnt, d => d.period2_cnt);
+                    };
+                    draw();
+                    charts.registerChart("detail-chart-3", draw);
                 }
             }
         };
