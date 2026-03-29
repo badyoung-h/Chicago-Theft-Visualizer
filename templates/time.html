@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>时间维度分析</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    <style>
+        .sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 250px; background: white; box-shadow: 2px 0 10px rgba(0,0,0,0.1); z-index: 100; overflow-y: auto; }
+        .content { margin-left: 250px; padding: 2rem; }
+        .nav-item { padding: 1rem 1.5rem; cursor: pointer; transition: all 0.2s; border-left: 3px solid transparent; }
+        .nav-item:hover { background: #f3f4f6; }
+        .nav-item.active { background: #eff6ff; color: #3b82f6; border-left-color: #3b82f6; font-weight: 600; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="p-6 border-b">
+            <a href="/" class="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+                返回首页
+            </a>
+            <h2 class="text-2xl font-bold mt-4 text-gray-800">时间维度</h2>
+        </div>
+        <nav>
+            <div class="nav-item active" data-type="weekly">一周犯罪分布</div>
+            <div class="nav-item" data-type="hourly">24小时犯罪分布</div>
+            <div class="nav-item" data-type="monthly">月度季节性规律</div>
+            <div class="nav-item" data-type="crosstab">犯罪类型月度热图</div>
+        </nav>
+    </div>
+
+    <div class="content">
+        <div id="analysis-details-container">
+            <div id="analysis-content" class="grid grid-cols-1 xl:grid-cols-3 gap-8 items-start"></div>
+        </div>
+    </div>
+
+    <div id="tooltip" class="custom-tooltip"></div>
+
+    <script type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script type="module">
+        import * as api from '{{ url_for("static", filename="js/api.js") }}';
+        import * as charts from '{{ url_for("static", filename="js/charts.js") }}';
+
+        const configs = {
+            weekly: {
+                html: `<div class="glass-card p-8 pb-4 xl:col-span-2 flex flex-col"><div class="flex justify-between items-center mb-6"><h3 class="text-lg font-bold text-slate-800">周内犯罪走势分析趋势图</h3><span class="text-xs text-slate-400 font-medium">单位：件</span></div><div id="detail-chart-1" class="h-[380px] w-full mb-6"></div><div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-auto mb-4"><div class="p-4 rounded-2xl bg-red-50/50 border border-red-100 flex flex-col items-center justify-center text-center"><div class="text-xs text-red-400 mb-1">案件最多的一天</div><div id="weekly-peak-day" class="text-lg font-bold text-red-600 leading-snug tabular-nums">--</div></div><div class="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-100 flex flex-col items-center justify-center text-center"><div class="text-xs text-emerald-400 mb-1">案件最少的一天</div><div id="weekly-lowest-day" class="text-lg font-bold text-emerald-600 leading-snug tabular-nums">--</div></div></div></div><div class="glass-card p-8 flex flex-col gap-6"><h3 class="text-lg font-bold text-slate-800">工作日 vs 周末分布</h3><div id="detail-chart-2" class="h-[350px] w-full mt-auto mb-auto"></div><div class="p-4 rounded-2xl bg-slate-50 border border-slate-100"><div class="text-xs text-slate-400 mb-2">分布提示</div><p class="text-xs text-slate-600 leading-relaxed">工作日与周末的犯罪分布比例反映了城市活动的节律。通常工作日案件总量较高，但周末在特定时段可能存在更高的突发风险。</p></div></div><div class="glass-card p-8 xl:col-span-3"><h3 class="text-lg font-bold text-slate-800 mb-6">一周犯罪数据清单</h3><div class="overflow-hidden rounded-2xl"><table class="w-full text-left"><thead class="bg-slate-50/50"><tr><th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase">星期</th><th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase">案件总量</th><th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase">占比</th><th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase">安全评估</th></tr></thead><tbody id="weekly-table-body" class="divide-y divide-slate-100"></tbody></table></div></div>`,
+                action: async () => {
+                    const res = await api.fetchWeeklyDistribution();
+                    const data = res.sort((a, b) => parseInt(a.dow) - parseInt(b.dow));
+                    const draw = () => {
+                        charts.drawBarChart("detail-chart-1", data, d => charts.weekdayMap[parseInt(d.dow)], d => d.cnt);
+                        const weekdayCnt = data.filter(d => parseInt(d.dow) >= 1 && parseInt(d.dow) <= 5).reduce((a, b) => a + b.cnt, 0);
+                        const weekendCnt = data.filter(d => parseInt(d.dow) === 0 || parseInt(d.dow) === 6).reduce((a, b) => a + b.cnt, 0);
+                        charts.drawDonutChart("detail-chart-2", [
+                            { label: "工作日", cnt: weekdayCnt, color: "#818CF8" },
+                            { label: "周末", cnt: weekendCnt, color: "#2DD4BF" }
+                        ]);
+                    };
+                    draw();
+                    charts.registerChart("detail-chart-1", draw);
+                    charts.registerChart("detail-chart-2", draw);
+                    const total = d3.sum(data, d => d.cnt);
+                    const peak = data.reduce((a, b) => a.cnt > b.cnt ? a : b);
+                    const lowest = data.reduce((a, b) => a.cnt < b.cnt ? a : b);
+                    document.getElementById('weekly-peak-day').innerText = `${charts.weekdayMap[peak.dow]} (${peak.cnt.toLocaleString()} 件)`;
+                    document.getElementById('weekly-lowest-day').innerText = `${charts.weekdayMap[lowest.dow]} (${lowest.cnt.toLocaleString()} 件)`;
+                    const tbody = document.getElementById('weekly-table-body');
+                    tbody.innerHTML = data.map(d => {
+                        const percent = (d.cnt / total * 100).toFixed(1) + "%";
+                        const isHigh = d.cnt > total / 7;
+                        return `<tr class="hover:bg-slate-50/50 transition-colors"><td class="px-6 py-4 font-bold text-slate-700">${charts.weekdayMap[d.dow]}</td><td class="px-6 py-4 text-slate-600">${d.cnt.toLocaleString()}</td><td class="px-6 py-4"><div class="flex items-center gap-2"><div class="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-indigo-500 rounded-full" style="width: ${percent}"></div></div><span class="text-xs font-medium text-slate-400 w-10">${percent}</span></div></td><td class="px-6 py-4"><span class="px-2 py-1 rounded-full text-[10px] font-bold ${isHigh ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}">${isHigh ? '风险较高' : '相对安全'}</span></td></tr>`;
+                    }).join('');
+                }
+            },
+            hourly: {
+                html: `<div class="glass-card p-8 xl:col-span-2"><h3 class="text-lg font-bold text-slate-800 mb-6">24小时犯罪分布曲线</h3><div id="detail-chart-1" class="h-[400px] w-full"></div></div><div class="glass-card p-8"><h3 class="text-lg font-bold text-slate-800 mb-6">时段风险等级</h3><div id="hourly-risk-levels" class="space-y-3"></div></div><div class="glass-card p-8 xl:col-span-3"><h3 class="text-lg font-bold text-slate-800 mb-6">24小时详细数据</h3><div class="overflow-hidden rounded-2xl"><table class="w-full text-left"><thead class="bg-slate-50/50"><tr><th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase">时段</th><th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase">案件数</th><th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase">占比</th><th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase">风险等级</th></tr></thead><tbody id="hourly-table-body" class="divide-y divide-slate-100"></tbody></table></div></div>`,
+                action: async () => {
+                    const res = await api.fetchHourlyDistribution();
+                    const data = res.sort((a, b) => parseInt(a.hour) - parseInt(b.hour));
+                    const draw = () => charts.drawLineChart("detail-chart-1", data, d => parseInt(d.hour), d => d.cnt, charts.colors.indigo);
+                    draw();
+                    charts.registerChart("detail-chart-1", draw);
+                    const total = d3.sum(data, d => d.cnt);
+                    const avg = total / data.length;
+                    const riskLevels = [
+                        { label: "深夜时段 (0-6时)", range: [0, 6], color: "bg-indigo-50 text-indigo-600" },
+                        { label: "早高峰 (7-9时)", range: [7, 9], color: "bg-amber-50 text-amber-600" },
+                        { label: "白天时段 (10-17时)", range: [10, 17], color: "bg-emerald-50 text-emerald-600" },
+                        { label: "晚高峰 (18-22时)", range: [18, 22], color: "bg-rose-50 text-rose-600" },
+                        { label: "夜间时段 (23时)", range: [23, 23], color: "bg-purple-50 text-purple-600" }
+                    ];
+                    const riskEl = document.getElementById('hourly-risk-levels');
+                    riskEl.innerHTML = riskLevels.map(r => {
+                        const cnt = data.filter(d => parseInt(d.hour) >= r.range[0] && parseInt(d.hour) <= r.range[1]).reduce((a, b) => a + b.cnt, 0);
+                        return `<div class="p-4 rounded-2xl ${r.color} border border-current/20"><div class="font-bold mb-1">${r.label}</div><div class="text-2xl font-extrabold">${cnt.toLocaleString()} 件</div></div>`;
+                    }).join('');
+                    const tbody = document.getElementById('hourly-table-body');
+                    tbody.innerHTML = data.map(d => {
+                        const percent = (d.cnt / total * 100).toFixed(1) + "%";
+                        const risk = d.cnt > avg * 1.2 ? '高风险' : d.cnt > avg ? '中风险' : '低风险';
+                        const riskClass = d.cnt > avg * 1.2 ? 'bg-rose-50 text-rose-500' : d.cnt > avg ? 'bg-amber-50 text-amber-500' : 'bg-emerald-50 text-emerald-500';
+                        return `<tr class="hover:bg-slate-50/50 transition-colors"><td class="px-6 py-4 font-bold text-slate-700">${d.hour}:00 - ${d.hour}:59</td><td class="px-6 py-4 text-slate-600">${d.cnt.toLocaleString()}</td><td class="px-6 py-4"><div class="flex items-center gap-2"><div class="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-indigo-500 rounded-full" style="width: ${percent}"></div></div><span class="text-xs font-medium text-slate-400 w-10">${percent}</span></div></td><td class="px-6 py-4"><span class="px-2 py-1 rounded-full text-[10px] font-bold ${riskClass}">${risk}</span></td></tr>`;
+                    }).join('');
+                }
+            },
+            monthly: {
+                html: `<div class="glass-card p-8 xl:col-span-2"><h3 class="text-lg font-bold text-slate-800 mb-6">月度犯罪趋势</h3><div id="detail-chart-1" class="h-[400px] w-full"></div></div><div class="glass-card p-8"><h3 class="text-lg font-bold text-slate-800 mb-6">季节性分析</h3><div id="seasonal-analysis" class="space-y-4"></div></div><div class="glass-card p-8 xl:col-span-3"><h3 class="text-lg font-bold text-slate-800 mb-6">月度数据详情</h3><div class="overflow-hidden rounded-2xl"><table class="w-full text-left"><thead class="bg-slate-50/50"><tr><th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase">月份</th><th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase">案件数</th><th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase">占比</th><th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase">季节</th></tr></thead><tbody id="monthly-table-body" class="divide-y divide-slate-100"></tbody></table></div></div>`,
+                action: async () => {
+                    const res = await api.fetchMonthlyTrend();
+                    const data = res.sort((a, b) => parseInt(a.month) - parseInt(b.month));
+                    const monthNames = ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"];
+                    const draw = () => charts.drawBarChart("detail-chart-1", data, d => monthNames[parseInt(d.month) - 1], d => d.cnt);
+                    draw();
+                    charts.registerChart("detail-chart-1", draw);
+                    const seasons = [
+                        { name: "春季 (3-5月)", months: [3, 4, 5], color: "bg-green-50 text-green-600" },
+                        { name: "夏季 (6-8月)", months: [6, 7, 8], color: "bg-red-50 text-red-600" },
+                        { name: "秋季 (9-11月)", months: [9, 10, 11], color: "bg-amber-50 text-amber-600" },
+                        { name: "冬季 (12-2月)", months: [12, 1, 2], color: "bg-blue-50 text-blue-600" }
+                    ];
+                    const seasonEl = document.getElementById('seasonal-analysis');
+                    seasonEl.innerHTML = seasons.map(s => {
+                        const cnt = data.filter(d => s.months.includes(parseInt(d.month))).reduce((a, b) => a + b.cnt, 0);
+                        return `<div class="p-4 rounded-2xl ${s.color} border border-current/20"><div class="font-bold mb-1">${s.name}</div><div class="text-2xl font-extrabold">${cnt.toLocaleString()} 件</div></div>`;
+                    }).join('');
+                    const total = d3.sum(data, d => d.cnt);
+                    const tbody = document.getElementById('monthly-table-body');
+                    tbody.innerHTML = data.map(d => {
+                        const percent = (d.cnt / total * 100).toFixed(1) + "%";
+                        const m = parseInt(d.month);
+                        const season = m >= 3 && m <= 5 ? '春季' : m >= 6 && m <= 8 ? '夏季' : m >= 9 && m <= 11 ? '秋季' : '冬季';
+                        return `<tr class="hover:bg-slate-50/50 transition-colors"><td class="px-6 py-4 font-bold text-slate-700">${monthNames[m - 1]}</td><td class="px-6 py-4 text-slate-600">${d.cnt.toLocaleString()}</td><td class="px-6 py-4"><div class="flex items-center gap-2"><div class="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-indigo-500 rounded-full" style="width: ${percent}"></div></div><span class="text-xs font-medium text-slate-400 w-10">${percent}</span></div></td><td class="px-6 py-4"><span class="px-2 py-1 rounded-full text-[10px] font-bold bg-slate-50 text-slate-600">${season}</span></td></tr>`;
+                    }).join('');
+                }
+            },
+            crosstab: {
+                html: `<div class="glass-card p-8 xl:col-span-3"><h3 class="text-lg font-bold text-slate-800 mb-6">犯罪类型月度热力图</h3><div id="detail-chart-1" class="h-[500px] w-full"></div></div><div class="glass-card p-8 xl:col-span-3"><h3 class="text-lg font-bold text-slate-800 mb-6">各类型季节性特征</h3><div id="crosstab-insights" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4"></div></div>`,
+                action: async () => {
+                    const rawData = await api.fetchCrimeTypeByMonth();
+                    const TOP_N = 10;
+                    const typeSum = d3.rollup(rawData, v => d3.sum(v, d => d.cnt), d => d.primary_type);
+                    const topTypes = Array.from(typeSum.entries()).sort((a, b) => b[1] - a[1]).slice(0, TOP_N).map(([type]) => type);
+                    const data = rawData.filter(d => topTypes.includes(d.primary_type)).map(d => ({ ...d, month: parseInt(d.month) }));
+                    const draw = () => charts.drawHeatmap("detail-chart-1", data, "month", "primary_type", "cnt");
+                    draw();
+                    charts.registerChart("detail-chart-1", draw);
+                    const monthNames = ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"];
+                    const insights = [];
+                    topTypes.slice(0, 5).forEach(type => {
+                        const typeData = data.filter(d => d.primary_type === type);
+                        const peak = typeData.reduce((a, b) => a.cnt > b.cnt ? a : b);
+                        const low = typeData.reduce((a, b) => a.cnt < b.cnt ? a : b);
+                        insights.push({
+                            type,
+                            peakMonth: monthNames[parseInt(peak.month) - 1],
+                            peakCnt: peak.cnt,
+                            lowMonth: monthNames[parseInt(low.month) - 1],
+                            lowCnt: low.cnt
+                        });
+                    });
+                    const insightsEl = document.getElementById('crosstab-insights');
+                    insightsEl.innerHTML = insights.map((item, i) => `<div class="p-4 rounded-2xl bg-slate-50 border border-slate-100"><div class="text-xs font-bold text-indigo-500 mb-2">${item.type}</div><div class="flex items-center gap-2 text-xs text-slate-600"><span class="text-rose-500">●</span> 高峰: ${item.peakMonth} (${item.peakCnt.toLocaleString()}件)</div><div class="flex items-center gap-2 text-xs text-slate-600 mt-1"><span class="text-emerald-500">●</span> 低谷: ${item.lowMonth} (${item.lowCnt.toLocaleString()}件)</div></div>`).join('');
+                }
+            }
+        };
+
+        async function loadAnalysis(type) {
+            const content = document.getElementById('analysis-content');
+            const config = configs[type];
+            content.innerHTML = config.html;
+            await config.action();
+        }
+
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.addEventListener('click', () => {
+                document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+                item.classList.add('active');
+                loadAnalysis(item.dataset.type);
+            });
+        });
+
+        loadAnalysis('weekly');
+    </script>
+</body>
+</html>

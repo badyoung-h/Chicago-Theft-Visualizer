@@ -43,3 +43,5 @@ My.md
 dist/
 build/
 *.egg-info/
+
+.claude/

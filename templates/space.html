@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>空间维度分析</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    <style>
+        .sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 250px; background: white; box-shadow: 2px 0 10px rgba(0,0,0,0.1); z-index: 100; overflow-y: auto; }
+        .content { margin-left: 250px; padding: 2rem; }
+        .nav-item { padding: 1rem 1.5rem; cursor: pointer; transition: all 0.2s; border-left: 3px solid transparent; }
+        .nav-item:hover { background: #f3f4f6; }
+        .nav-item.active { background: #d1fae5; color: #10b981; border-left-color: #10b981; font-weight: 600; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="p-6 border-b">
+            <a href="/" class="text-sm text-green-600 hover:text-green-800 flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+                返回首页
+            </a>
+            <h2 class="text-2xl font-bold mt-4 text-gray-800">空间维度</h2>
+        </div>
+        <nav>
+            <div class="nav-item active" data-type="district">警区案件排行</div>
+            <div class="nav-item" data-type="locations">高危案发场所</div>
+            <div class="nav-item" data-type="theft">盗窃专项分析</div>
+        </nav>
+    </div>
+
+    <div class="content">
+        <div id="analysis-details-container">
+            <div id="analysis-content" class="grid grid-cols-1 xl:grid-cols-3 gap-8 items-start"></div>
+        </div>
+    </div>
+
+    <div id="tooltip" class="custom-tooltip"></div>
+
+    <script type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script type="module">
+        import * as api from '{{ url_for("static", filename="js/api.js") }}';
+        import * as charts from '{{ url_for("static", filename="js/charts.js") }}';
+
+        const configs = {
+            district: {
+                html: `<div class="glass-card p-8 xl:col-span-2"><div class="flex flex-col gap-2 mb-6"><h3 class="text-lg font-bold text-slate-800">各警区案件分布地图</h3><p class="text-sm text-slate-500">按警区边界进行着色，颜色越深表示该警区案件总量越高。</p></div><div id="detail-chart-1" class="h-[600px] w-full"></div></div><div class="glass-card p-8"><div class="district-focus-card p-4 rounded-3xl mb-6"><div id="district-focus-card"></div></div><div class="flex items-center justify-between gap-4 mb-6"><h3 class="text-lg font-bold text-slate-800">警区案件热度排行</h3><span class="text-xs font-semibold text-slate-400">悬停或点击地图即可跟随</span></div><div id="district-top-list" class="space-y-4 max-h-[420px] overflow-y-auto pr-2"></div></div>`,
+                action: async () => {
+                    const [data, geojson] = await Promise.all([api.fetchDistrictCrimes(), api.fetchGeoJSON()]);
+                    const districtNameMap = new Map((geojson?.features || []).map(feature => [String(feature.properties?.district || "").trim().replace(/^0+/, ''), String(feature.properties?.district_name || "").trim()]));
+                    const districtData = (data || []).map(item => {
+                        const dId = String(item.district).trim().replace(/^0+/, '');
+                        return {...item, district: dId, district_name: districtNameMap.get(dId) || `警区 ${dId}`, cnt: Number(item.cnt)};
+                    }).filter(item => item.district && Number.isFinite(item.cnt)).sort((a, b) => b.cnt - a.cnt);
+                    let lockedDistrict = districtData[0]?.district || null, hoverDistrict = null;
+                    const syncState = () => {
+                        const active = hoverDistrict || lockedDistrict;
+                        charts.setDistrictFollowState("detail-chart-1", "district-top-list", active, lockedDistrict);
+                        charts.renderDistrictFocus("district-focus-card", districtData, active, "cnt", "案件总数");
+                    };
+                    const draw = () => {
+                        charts.drawDistrictChoroplethMap("detail-chart-1", geojson, districtData, "cnt", "案件总量", {
+                            onHover: d => { hoverDistrict = d; syncState(); },
+                            onLeave: () => { hoverDistrict = null; syncState(); },
+                            onSelect: d => { lockedDistrict = d; syncState(); }
+                        });
+                        charts.renderDistrictRanking("district-top-list", districtData, "cnt", "案件总数", {
+                            limit: 10,
+                            onHover: d => { hoverDistrict = d; syncState(); },
+                            onLeave: () => { hoverDistrict = null; syncState(); },
+                            onSelect: d => { lockedDistrict = d; syncState(); }
+                        });
+                        syncState();
+                    };
+                    draw();
+                    charts.registerChart("detail-chart-1", draw);
+                }
+            },
+            locations: {
+                html: `<div class="glass-card p-8 xl:col-span-2"><h3 class="text-lg font-bold text-slate-800 mb-6">高危案发场所 TOP 10</h3><div id="detail-chart-1" class="h-[500px] w-full"></div></div><div class="glass-card p-8"><h3 class="text-lg font-bold text-slate-800 mb-6">场所类型分析</h3><div id="location-insights" class="space-y-3"></div></div><div class="glass-card p-8 xl:col-span-3"><h3 class="text-lg font-bold text-slate-800 mb-6">详细场所数据</h3><div class="overflow-hidden rounded-2xl"><table class="w-full text-left"><thead class="bg-slate-50/50"><tr><th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase">场所类型</th><th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase">案件数</th><th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase">占比</th><th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase">风险等级</th></tr></thead><tbody id="location-table-body" class="divide-y divide-slate-100"></tbody></table></div></div>`,
+                action: async () => {
+                    const res = await api.fetchTopLocations();
+                    const data = res.slice(0, 10);
+                    const draw = () => charts.drawBarChart("detail-chart-1", data, d => d.location_description, d => d.cnt);
+                    draw();
+                    charts.registerChart("detail-chart-1", draw);
+                    const total = d3.sum(data, d => d.cnt);
+                    const insightsEl = document.getElementById('location-insights');
+                    insightsEl.innerHTML = data.slice(0, 5).map((d, i) => {
+                        const colors = ["bg-rose-50 text-rose-600", "bg-orange-50 text-orange-600", "bg-amber-50 text-amber-600", "bg-yellow-50 text-yellow-600", "bg-lime-50 text-lime-600"];
+                        return `<div class="p-4 rounded-2xl ${colors[i]} border border-current/20"><div class="text-xs mb-1">第 ${i + 1} 名</div><div class="font-bold text-sm mb-1">${d.location_description}</div><div class="text-xl font-extrabold">${d.cnt.toLocaleString()} 件</div></div>`;
+                    }).join('');
+                    const tbody = document.getElementById('location-table-body');
+                    tbody.innerHTML = data.map((d, i) => {
+                        const percent = (d.cnt / total * 100).toFixed(1) + "%";
+                        const risk = i < 3 ? '极高风险' : i < 6 ? '高风险' : '中风险';
+                        const riskClass = i < 3 ? 'bg-rose-50 text-rose-500' : i < 6 ? 'bg-amber-50 text-amber-500' : 'bg-yellow-50 text-yellow-500';
+                        return `<tr class="hover:bg-slate-50/50 transition-colors"><td class="px-6 py-4 font-bold text-slate-700">${d.location_description}</td><td class="px-6 py-4 text-slate-600">${d.cnt.toLocaleString()}</td><td class="px-6 py-4"><div class="flex items-center gap-2"><div class="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-indigo-500 rounded-full" style="width: ${percent}"></div></div><span class="text-xs font-medium text-slate-400 w-10">${percent}</span></div></td><td class="px-6 py-4"><span class="px-2 py-1 rounded-full text-[10px] font-bold ${riskClass}">${risk}</span></td></tr>`;
+                    }).join('');
+                }
+            },
+            theft: {
+                html: `<div class="glass-card p-8 xl:col-span-2"><div class="flex flex-col gap-2 mb-6"><h3 class="text-lg font-bold text-slate-800">盗窃案件警区分布地图</h3><p class="text-sm text-slate-500">专项分析盗窃类案件在各警区的分布情况。</p></div><div id="detail-chart-1" class="h-[600px] w-full"></div></div><div class="glass-card p-8"><div class="district-focus-card p-4 rounded-3xl mb-6"><div id="theft-focus-card"></div></div><div class="flex items-center justify-between gap-4 mb-6"><h3 class="text-lg font-bold text-slate-800">盗窃案件热度排行</h3><span class="text-xs font-semibold text-slate-400">悬停或点击地图即可跟随</span></div><div id="theft-top-list" class="space-y-4 max-h-[420px] overflow-y-auto pr-2"></div></div>`,
+                action: async () => {
+                    const [data, geojson] = await Promise.all([api.fetchTheftByDistrict(), api.fetchGeoJSON()]);
+                    const districtNameMap = new Map((geojson?.features || []).map(feature => [String(feature.properties?.district || "").trim().replace(/^0+/, ''), String(feature.properties?.district_name || "").trim()]));
+                    const theftData = (data || []).map(item => {
+                        const dId = String(item.district).trim().replace(/^0+/, '');
+                        return {...item, district: dId, district_name: districtNameMap.get(dId) || `警区 ${dId}`, theft_cnt: Number(item.theft_cnt)};
+                    }).filter(item => item.district && Number.isFinite(item.theft_cnt)).sort((a, b) => b.theft_cnt - a.theft_cnt);
+                    let lockedDistrict = theftData[0]?.district || null, hoverDistrict = null;
+                    const syncState = () => {
+                        const active = hoverDistrict || lockedDistrict;
+                        charts.setDistrictFollowState("detail-chart-1", "theft-top-list", active, lockedDistrict);
+                        charts.renderDistrictFocus("theft-focus-card", theftData, active, "theft_cnt", "盗窃案件");
+                    };
+                    const draw = () => {
+                        charts.drawDistrictChoroplethMap("detail-chart-1", geojson, theftData, "theft_cnt", "盗窃案件", {
+                            onHover: d => { hoverDistrict = d; syncState(); },
+                            onLeave: () => { hoverDistrict = null; syncState(); },
+                            onSelect: d => { lockedDistrict = d; syncState(); }
+                        });
+                        charts.renderDistrictRanking("theft-top-list", theftData, "theft_cnt", "盗窃案件", {
+                            limit: 10,
+                            onHover: d => { hoverDistrict = d; syncState(); },
+                            onLeave: () => { hoverDistrict = null; syncState(); },
+                            onSelect: d => { lockedDistrict = d; syncState(); }
+                        });
+                        syncState();
+                    };
+                    draw();
+                    charts.registerChart("detail-chart-1", draw);
+                }
+            }
+        };
+
+        async function loadAnalysis(type) {
+            const content = document.getElementById('analysis-content');
+            const config = configs[type];
+            content.innerHTML = config.html;
+            await config.action();
+        }
+
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.addEventListener('click', () => {
+                document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+                item.classList.add('active');
+                loadAnalysis(item.dataset.type);
+            });
+        });
+
+        loadAnalysis('district');
+    </script>
+</body>
+</html>

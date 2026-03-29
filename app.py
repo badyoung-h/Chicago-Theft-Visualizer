@@ -59,6 +59,22 @@ def handle_exception(e):
 
 @app.route('/')
 def index():
+    return render_template('home.html')
+
+@app.route('/time')
+def time_dimension():
+    return render_template('time.html')
+
+@app.route('/space')
+def space_dimension():
+    return render_template('space.html')
+
+@app.route('/crime_type')
+def crime_type_dimension():
+    return render_template('crime_type.html')
+
+@app.route('/old')
+def old_index():
     return render_template('index.html')
 
 @app.route('/api/yearly_trend')
