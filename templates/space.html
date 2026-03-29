@@ -28,6 +28,7 @@
         <nav>
             <div class="nav-item active" data-type="district">警区案件排行</div>
             <div class="nav-item" data-type="locations">高危案发场所</div>
+            <div class="nav-item" data-type="concentration">街区犯罪集中度</div>
         </nav>
     </div>
 
@@ -101,6 +102,64 @@
                         }).join('');
                     };
                     select.addEventListener('change', () => loadData(select.value));
+                    await loadData('');
+                }
+            },
+            concentration: {
+                html: `<div class="glass-card p-8 xl:col-span-3"><div class="flex flex-col gap-2 mb-6"><h3 class="text-lg font-bold text-slate-800">街区犯罪集中度分析</h3><p class="text-sm text-slate-500">洛伦兹曲线展示犯罪在不同街区的集中程度，曲线越弯曲表示犯罪越集中于少数街区。</p></div><div class="mb-6"><label class="text-xs font-semibold text-slate-400 mb-2 block">案件类型筛选</label><select id="concentration-type-select" class="w-full max-w-xs px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-500"><option value="">全部案件</option><option value="THEFT">盗窃 THEFT</option><option value="ASSAULT">袭击 ASSAULT</option><option value="DECEPTIVE PRACTICE">欺诈 DECEPTIVE PRACTICE</option><option value="BURGLARY">入室盗窃 BURGLARY</option><option value="MOTOR VEHICLE THEFT">机动车盗窃 MOTOR VEHICLE THEFT</option><option value="ROBBERY">抢劫 ROBBERY</option><option value="NARCOTICS">毒品 NARCOTICS</option><option value="CRIMINAL TRESPASS">非法侵入 CRIMINAL TRESPASS</option><option value="WEAPONS VIOLATION">武器违规 WEAPONS VIOLATION</option><option value="OFFENSE INVOLVING CHILDREN">涉及儿童犯罪 OFFENSE INVOLVING CHILDREN</option><option value="SEX OFFENSE">性犯罪 SEX OFFENSE</option><option value="HOMICIDE">凶杀 HOMICIDE</option><option value="ARSON">纵火 ARSON</option></select></div><div class="grid grid-cols-1 xl:grid-cols-3 gap-6"><div class="xl:col-span-2"><div id="lorenz-chart" class="h-[500px] w-full"></div></div><div class="space-y-4"><div class="p-6 rounded-2xl bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-100"><div class="text-xs font-semibold text-purple-600 mb-2">基尼系数</div><div class="text-3xl font-black text-purple-700" id="gini-value">-</div><div class="text-xs text-purple-500 mt-2">数值越大，犯罪越集中</div></div><div class="p-6 rounded-2xl bg-slate-50 border border-slate-200"><div class="text-xs font-semibold text-slate-600 mb-3">集中度解读</div><div id="concentration-insight" class="text-sm text-slate-700 leading-relaxed"></div></div><div class="p-6 rounded-2xl bg-slate-50 border border-slate-200"><div class="text-xs font-semibold text-slate-600 mb-3">关键数据</div><div id="key-stats" class="space-y-2 text-sm text-slate-700"></div></div></div></div></div>`,
+                action: async () => {
+                    const select = document.getElementById('concentration-type-select');
+                    const loadData = async (type) => {
+                    const data = await api.fetchBlockConcentration(type);
+                    const total = data.reduce((s, d) => s + d.cnt, 0);
+                    let cumCrimes = 0, cumBlocks = 0, lorenzData = [{x: 0, y: 0}];
+                    data.forEach((d, i) => {
+                        cumCrimes += d.cnt;
+                        cumBlocks += 1;
+                        lorenzData.push({x: cumBlocks / data.length * 100, y: cumCrimes / total * 100});
+                    });
+                    const gini = 1 - d3.sum(lorenzData.slice(1), (d, i) => (lorenzData[i].x + d.x) * (d.y - lorenzData[i].y)) / 10000;
+
+                    const svg = d3.select('#lorenz-chart').append('svg').attr('width', '100%').attr('height', '100%');
+                    const box = svg.node().getBoundingClientRect();
+                    const m = {t: 40, r: 40, b: 60, l: 60}, w = box.width - m.l - m.r, h = box.height - m.t - m.b;
+                    const g = svg.append('g').attr('transform', `translate(${m.l},${m.t})`);
+
+                    const x = d3.scaleLinear().domain([0, 100]).range([0, w]);
+                    const y = d3.scaleLinear().domain([0, 100]).range([h, 0]);
+
+                    g.append('defs').append('linearGradient').attr('id', 'lorenz-grad').attr('x1', '0%').attr('y1', '0%').attr('x2', '0%').attr('y2', '100%')
+                        .selectAll('stop').data([{offset: '0%', color: '#8b5cf6'}, {offset: '100%', color: '#6366f1'}]).join('stop')
+                        .attr('offset', d => d.offset).attr('stop-color', d => d.color);
+
+                    g.append('line').attr('x1', 0).attr('y1', h).attr('x2', w).attr('y2', 0).attr('stroke', '#cbd5e1').attr('stroke-width', 2).attr('stroke-dasharray', '5,5');
+
+                    const area = d3.area().x(d => x(d.x)).y0(h).y1(d => y(d.y)).curve(d3.curveMonotoneX);
+                    g.append('path').datum(lorenzData).attr('d', area).attr('fill', 'url(#lorenz-grad)').attr('opacity', 0.2);
+
+                    const line = d3.line().x(d => x(d.x)).y(d => y(d.y)).curve(d3.curveMonotoneX);
+                    g.append('path').datum(lorenzData).attr('d', line).attr('fill', 'none').attr('stroke', 'url(#lorenz-grad)').attr('stroke-width', 3);
+
+                    const idx20 = Math.floor(lorenzData.length * 0.2);
+                    const pt20 = lorenzData[idx20];
+                    g.append('circle').attr('cx', x(pt20.x)).attr('cy', y(pt20.y)).attr('r', 6).attr('fill', '#8b5cf6').attr('stroke', '#fff').attr('stroke-width', 3);
+                    g.append('line').attr('x1', x(pt20.x)).attr('y1', y(pt20.y)).attr('x2', x(pt20.x)).attr('y2', h).attr('stroke', '#8b5cf6').attr('stroke-width', 1.5).attr('stroke-dasharray', '3,3').attr('opacity', 0.6);
+                    g.append('line').attr('x1', 0).attr('y1', y(pt20.y)).attr('x2', x(pt20.x)).attr('y2', y(pt20.y)).attr('stroke', '#8b5cf6').attr('stroke-width', 1.5).attr('stroke-dasharray', '3,3').attr('opacity', 0.6);
+
+                    g.append('g').attr('transform', `translate(0,${h})`).call(d3.axisBottom(x).ticks(5).tickFormat(d => d + '%')).selectAll('text').style('font-size', '12px').style('fill', '#64748b');
+                    g.append('g').call(d3.axisLeft(y).ticks(5).tickFormat(d => d + '%')).selectAll('text').style('font-size', '12px').style('fill', '#64748b');
+
+                    g.append('text').attr('x', w / 2).attr('y', h + 45).attr('text-anchor', 'middle').style('font-size', '13px').style('fill', '#64748b').style('font-weight', '600').text('街区累计占比 (%)');
+                    g.append('text').attr('transform', 'rotate(-90)').attr('x', -h / 2).attr('y', -45).attr('text-anchor', 'middle').style('font-size', '13px').style('fill', '#64748b').style('font-weight', '600').text('犯罪累计占比 (%)');
+
+                    document.getElementById('gini-value').textContent = gini.toFixed(3);
+                    document.getElementById('concentration-insight').innerHTML = `<span class="text-2xl font-black text-slate-800">${pt20.y.toFixed(1)}%</span> 的案件<br>集中在 <span class="text-2xl font-black text-purple-600">20%</span> 的街区`;
+
+                    const top10 = data.slice(0, 10).reduce((s, d) => s + d.cnt, 0);
+                    const top10Pct = (top10 / total * 100).toFixed(1);
+                    document.getElementById('key-stats').innerHTML = `<div>总街区数: <span class="font-bold">${data.length.toLocaleString()}</span></div><div>总案件数: <span class="font-bold">${total.toLocaleString()}</span></div><div>前10街区占比: <span class="font-bold text-purple-600">${top10Pct}%</span></div>`;
+                    };
+                    select.addEventListener('change', () => { d3.select('#lorenz-chart').selectAll('*').remove(); loadData(select.value); });
                     await loadData('');
                 }
             }

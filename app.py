@@ -356,6 +356,57 @@ def crime_type_by_month():
         if cur: cur.close()
         release_db_conn(conn)
 
+@app.route('/api/arrest_rate_by_time')
+@cache.cached()
+def arrest_rate_by_time():
+    conn = get_db_conn()
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT
+                CASE WHEN EXTRACT(HOUR FROM date) BETWEEN 6 AND 18 THEN '白天' ELSE '夜晚' END AS time_period,
+                COUNT(*) FILTER (WHERE arrest = TRUE) AS arrests,
+                COUNT(*) AS total,
+                ROUND(COUNT(*) FILTER (WHERE arrest = TRUE) * 100.0 / COUNT(*), 2) AS arrest_rate
+            FROM crimes
+            GROUP BY time_period
+        """)
+        rows = cur.fetchall()
+        return jsonify(rows)
+    finally:
+        if cur: cur.close()
+        release_db_conn(conn)
+
+@app.route('/api/block_concentration')
+@cache.cached(query_string=True)
+def block_concentration():
+    from flask import request
+    crime_type = request.args.get('type', '')
+    conn = get_db_conn()
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        if crime_type:
+            cur.execute("""
+                SELECT block, COUNT(*) AS cnt
+                FROM crimes
+                WHERE block IS NOT NULL AND block != '' AND primary_type = %s
+                GROUP BY block
+                ORDER BY cnt DESC
+            """, (crime_type,))
+        else:
+            cur.execute("""
+                SELECT block, COUNT(*) AS cnt
+                FROM crimes
+                WHERE block IS NOT NULL AND block != ''
+                GROUP BY block
+                ORDER BY cnt DESC
+            """)
+        rows = cur.fetchall()
+        return jsonify(rows)
+    finally:
+        if cur: cur.close()
+        release_db_conn(conn)
+
 @app.route('/weekly')
 def weekly_page():
     return render_template('weekly.html')

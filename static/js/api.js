@@ -56,3 +56,8 @@ export async function fetchCrimeTypeByMonth() {
 export async function fetchGeoJSON() {
     return fetch('/static/data/police_districts.geojson').then(r => r.json());
 }
+
+export async function fetchBlockConcentration(crimeType = null) {
+    const url = crimeType ? `/api/block_concentration?type=${encodeURIComponent(crimeType)}` : '/api/block_concentration';
+    return fetch(url).then(r => r.json());
+}
