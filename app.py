@@ -146,14 +146,36 @@ def top_crime_types():
         if cur: cur.close()
         release_db_conn(conn)
 
-@app.route('/api/district_crimes')
+@app.route('/api/all_crime_types')
 @cache.cached()
-def district_crimes():
+def all_crime_types():
     conn = get_db_conn()
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT district, COUNT(*) AS cnt FROM crimes WHERE district IS NOT NULL GROUP BY district ORDER BY cnt DESC")
+        cur.execute("SELECT DISTINCT primary_type FROM crimes WHERE primary_type IS NOT NULL ORDER BY primary_type")
         rows = cur.fetchall()
+        return jsonify(rows)
+    finally:
+        if cur: cur.close()
+        release_db_conn(conn)
+
+@app.route('/api/district_crimes')
+def district_crimes():
+    from flask import request
+    crime_type = request.args.get('type')
+    cache_key = f'district_crimes_{crime_type or "all"}'
+    result = cache.get(cache_key)
+    if result:
+        return jsonify(result)
+    conn = get_db_conn()
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        if crime_type:
+            cur.execute("SELECT district, COUNT(*) AS cnt FROM crimes WHERE district IS NOT NULL AND primary_type = %s GROUP BY district ORDER BY cnt DESC", (crime_type,))
+        else:
+            cur.execute("SELECT district, COUNT(*) AS cnt FROM crimes WHERE district IS NOT NULL GROUP BY district ORDER BY cnt DESC")
+        rows = cur.fetchall()
+        cache.set(cache_key, rows)
         return jsonify(rows)
     finally:
         if cur: cur.close()

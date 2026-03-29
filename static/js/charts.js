@@ -517,8 +517,8 @@ export function renderDistrictRanking(containerId, data, valueKey, valueLabel, o
                     <div class="flex items-center gap-3">
                         <div class="w-11 h-11 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-black text-lg">${index + 1}</div>
                         <div>
-                            <div class="text-base font-black text-slate-800">警区 ${item.district}</div>
-                            <div class="text-xs text-slate-400 mt-0.5">${item.district_name || `警区 ${item.district}`}</div>
+                            <div class="text-base font-black text-slate-800">${item.district_name || `警区 ${item.district}`}</div>
+                            <div class="text-xs text-slate-400 mt-0.5">警区 ${item.district}</div>
                         </div>
                     </div>
                     <div class="text-right">
@@ -553,8 +553,8 @@ export function renderDistrictFocus(containerId, data, district, valueKey, value
         <div class="flex items-start justify-between gap-4">
             <div>
                 <div class="text-xs font-bold text-indigo-500 uppercase tracking-[0.3em] mb-2">当前聚焦警区</div>
-                <div class="text-3xl font-black text-slate-800">警区 ${current.district}</div>
-                <div class="text-sm text-slate-500 mt-1">${current.district_name || `警区 ${current.district}`}</div>
+                <div class="text-3xl font-black text-slate-800">${current.district_name || `警区 ${current.district}`}</div>
+                <div class="text-sm text-slate-500 mt-1">警区 ${current.district}</div>
             </div>
             <div class="w-14 h-14 rounded-2xl bg-white/80 text-indigo-600 flex items-center justify-center shadow-sm text-2xl">📍</div>
         </div>

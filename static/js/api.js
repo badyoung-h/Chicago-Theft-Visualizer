@@ -15,8 +15,13 @@ export async function fetchTopCrimeTypes() {
     return fetch('/api/top_crime_types').then(r => r.json());
 }
 
-export async function fetchDistrictCrimes() {
-    return fetch('/api/district_crimes').then(r => r.json());
+export async function fetchDistrictCrimes(crimeType = null) {
+    const url = crimeType ? `/api/district_crimes?type=${encodeURIComponent(crimeType)}` : '/api/district_crimes';
+    return fetch(url).then(r => r.json());
+}
+
+export async function fetchAllCrimeTypes() {
+    return fetch('/api/all_crime_types').then(r => r.json());
 }
 
 export async function fetchArrestRate() {
